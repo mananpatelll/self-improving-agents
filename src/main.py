@@ -1,8 +1,8 @@
 """Run the worker over a set of questions and score it.
 
 One question at a time: worker writes SQL, the verifier checks it against
-gold. On failure the trial is handed to the teacher -- not built yet, so
-that hook is a no-op for now, but the wiring is in place.
+gold. On failure the trial is handed to the teacher, which writes a lesson
+to memory for the worker to use on later questions.
 
 Works on any list of Example objects, so the same code scores the 30-question
 eval set or drives the 60-question improvement loop. Change SPLIT below to
@@ -14,6 +14,7 @@ from pathlib import Path
 
 from langchain_core.tools import BaseTool
 
+from src.agents.teacher import teach
 from src.agents.worker import WorkerResult, run_worker
 from src.dataset import Example, load_examples, make_splits
 from src.logger import append_trial, log_path
@@ -38,7 +39,7 @@ class Trial:
 
 def send_to_teacher(trial: Trial) -> None:
     """Hand a failed trial to the teacher for improvement."""
-    print("  -> would send to teacher (not built yet)")
+    teach(trial)
 
 
 def run_trial(
