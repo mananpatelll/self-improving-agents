@@ -10,8 +10,9 @@ from dataclasses import dataclass
 from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.tools import BaseTool, tool
+from langgraph.errors import GraphRecursionError
 
 from src.sql_executor import make_sql_tools
 
@@ -20,7 +21,7 @@ WORKER_MODEL = "claude-haiku-4-5"
 
 # A hard cap on tool calls per question. Without this, a confused agent can
 # loop (describe table, query, describe table again...) and never submit.
-MAX_STEPS = 8
+MAX_STEPS = 15
 
 # Persona only -- no step-by-step instructions. Scripting the process here
 # would be prompting around the exact thing the teacher is meant to fix.
@@ -105,11 +106,23 @@ def run_worker(
 
     # recursion_limit counts graph steps, not tool calls, so it needs roughly
     # 2x MAX_STEPS of headroom (one step per model call, one per tool call).
-    result = agent.invoke(
-        {"messages": [("user", question)]},
-        config={"recursion_limit": MAX_STEPS * 2 + 2},
-    )
-    messages = result["messages"]
+    try:
+        result = agent.invoke(
+            {"messages": [("user", question)]},
+            config={"recursion_limit": MAX_STEPS * 2 + 2},
+        )
+        messages = result["messages"]
+    except GraphRecursionError:
+        # Worker used its whole tool-call budget without ever calling
+        # submit_answer. invoke() gives back no partial state on this error,
+        # so record what happened as a message instead of losing the trace
+        # and crashing whatever batch of questions is running.
+        messages = [
+            HumanMessage(content=question),
+            AIMessage(
+                content=f"[gave up: used all {MAX_STEPS} tool calls without submitting an answer]"
+            ),
+        ]
 
     sql = _extract_submission(messages)
     return WorkerResult(sql=sql, messages=messages, submitted=sql is not None)
