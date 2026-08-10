@@ -36,7 +36,8 @@ already know the result from running a query -- do not respond in plain \
 text, always finish by calling submit_answer.
 {memory_section}"""
 
-NO_MEMORY = "\n."
+# baseline the ablation compares against.
+NO_MEMORY = ""
 
 
 @tool
