@@ -9,8 +9,7 @@ whole improvement loop depends on, so it has to be cheap and deterministic.
 import re
 from collections import Counter
 from dataclasses import dataclass
-
-from sql_executor import ExecResult, run_sql
+from src.sql_executor import ExecResult, run_sql
 
 # Floats are rounded before comparison so that an AVG computed two different
 # ways does not count as a mismatch on the last decimal place.
