@@ -22,6 +22,9 @@ if TYPE_CHECKING:
 LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
 
 
+RUNS_LOG = LOG_DIR / "runs.jsonl"
+
+
 def log_path(split: str) -> Path:
     """Build a log file path for one run, named so runs never collide."""
     LOG_DIR.mkdir(exist_ok=True)
@@ -83,6 +86,7 @@ def append_trial(path: Path, split: str, trial: "Trial") -> None:
     record = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "split": split,
+        "qid": trial.example.qid,
         "db_id": trial.example.db_id,
         "question": trial.example.question,
         "gold_sql": trial.example.gold_sql,
@@ -100,6 +104,42 @@ def read_log(path: Path) -> list[dict]:
     """Read every record from a log file, in the order they were written."""
     with path.open("r", encoding="utf-8") as f:
         return [json.loads(line) for line in f if line.strip()]
+
+
+def write_run_summary(summary: dict, path: Path = RUNS_LOG) -> None:
+    """Append one run's settings and aggregate metrics as a single JSON line."""
+    path.parent.mkdir(exist_ok=True)
+    record = {"timestamp": datetime.now(timezone.utc).isoformat(), **summary}
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def read_runs(path: Path = RUNS_LOG) -> list[dict]:
+    """Read every run summary, in the order they were written."""
+    if not path.exists():
+        return []
+    return read_log(path)
+
+
+def print_runs(path: Path = RUNS_LOG) -> None:
+    """Print a compact table of every run, for comparing settings and scores."""
+    runs = read_runs(path)
+    if not runs:
+        print("no runs logged yet")
+        return
+
+    header = f"{'run_id':30s} {'split':9s} {'memory':7s} {'score':8s} {'seen':8s} {'unseen':8s}"
+    print(header)
+    print("-" * len(header))
+    for r in runs:
+        seen, unseen = r.get("seen", {}), r.get("unseen", {})
+        seen_s = f"{seen['correct']}/{seen['total']}" if seen.get("total") else "-"
+        unseen_s = f"{unseen['correct']}/{unseen['total']}" if unseen.get("total") else "-"
+        score_s = f"{r['num_correct']}/{r['num_questions']}"
+        print(
+            f"{r['run_id']:30s} {r['split']:9s} {str(r['use_memory']):7s} "
+            f"{score_s:8s} {seen_s:8s} {unseen_s:8s}"
+        )
 
 
 def _truncate(text: str, limit: int = 100) -> str:
@@ -138,5 +178,8 @@ def print_log(path: Path) -> None:
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         print("usage: python -m src.logger <path/to/log.jsonl>")
+        print("       python -m src.logger runs")
+    elif sys.argv[1] == "runs":
+        print_runs()
     else:
         print_log(Path(sys.argv[1]))

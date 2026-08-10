@@ -9,24 +9,29 @@ eval set or drives the 60-question improvement loop. Change SPLIT below to
 switch which one runs.
 """
 
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
 from langchain_core.tools import BaseTool
 
-from src.agents.teacher import teach
-from src.agents.worker import WorkerResult, run_worker
-from src.dataset import Example, load_examples, make_splits
-from src.logger import append_trial, log_path
+from src.agents.teacher import TEACHER_MODEL, teach
+from src.agents.worker import WORKER_MODEL, WorkerResult, run_worker
+from src.dataset import Example, IMPROVE_DBS, load_examples, make_splits
+from src.logger import append_trial, log_path, write_run_summary
 from src.memory import load_lessons
 from src.sql_executor import ExecResult
 from src.verifier import Verdict, verify
 
 # Change this to switch what the script runs on: 30 fixed eval questions, or
 # the 60 the improvement loop learns from.
-SPLIT = "eval"  # "eval" | "improve"
+SPLIT = "improve"  # "eval" | "improve"
 
 USE_MEMORY = True
+
+# Passed to dataset.make_splits so every run draws the same questions --
+# needed to compare runs against each other.
+SPLIT_SEED = 0
 
 DEV_PATH = "spider_data/dev.json"
 
@@ -113,21 +118,29 @@ def score(trials: list[Trial]) -> float:
     return sum(1 for t in trials if t.verdict.correct) / len(trials)
 
 
+def _subscore(trials: list[Trial], in_improve_dbs: bool) -> dict:
+
+    subset = [t for t in trials if (t.example.db_id in IMPROVE_DBS) == in_improve_dbs]
+    correct = sum(1 for t in subset if t.verdict.correct)
+    return {"correct": correct, "total": len(subset)}
+
+
 if __name__ == "__main__":
     examples = load_examples(DEV_PATH)
-    splits = make_splits(examples)
+    splits = make_splits(examples, seed=SPLIT_SEED)
 
     questions = splits[SPLIT]
     path = log_path(SPLIT)
 
     # None means "read memory fresh before each question"; [] pins it empty.
     lessons = None if USE_MEMORY else []
-    in_memory = len(load_lessons()) if USE_MEMORY else 0
+    lessons_at_start = len(load_lessons()) if USE_MEMORY else 0
 
     print(f"running '{SPLIT}' split: {len(questions)} questions")
-    print(f"memory: {'on' if USE_MEMORY else 'off'} ({in_memory} lessons at start)")
+    print(f"memory: {'on' if USE_MEMORY else 'off'} ({lessons_at_start} lessons at start)")
     print(f"logging to {path}\n")
 
+    started = time.monotonic()
     trials = run_split(
         questions,
         split_name=SPLIT,
@@ -135,6 +148,32 @@ if __name__ == "__main__":
         route_failures_to_teacher=(SPLIT == "improve"),
         log_file=path,
     )
+    duration_seconds = round(time.monotonic() - started, 1)
 
     correct = sum(1 for t in trials if t.verdict.correct)
+    seen = _subscore(trials, in_improve_dbs=True)
+    unseen = _subscore(trials, in_improve_dbs=False)
+
+    write_run_summary({
+        "run_id": path.stem,
+        "split": SPLIT,
+        "use_memory": USE_MEMORY,
+        "worker_model": WORKER_MODEL,
+        "teacher_model": TEACHER_MODEL if SPLIT == "improve" else None,
+        "split_seed": SPLIT_SEED,
+        "num_questions": len(trials),
+        "num_correct": correct,
+        "accuracy": score(trials),
+        "num_no_submission": sum(1 for t in trials if not t.worker.submitted),
+        "lessons_at_start": lessons_at_start,
+        "lessons_at_end": len(load_lessons()),
+        "duration_seconds": duration_seconds,
+        "trace_log": str(path),
+        "seen": seen,
+        "unseen": unseen,
+    })
+
     print(f"\n{SPLIT}: {correct}/{len(trials)} correct ({score(trials):.1%})")
+    if seen["total"] and unseen["total"]:
+        print(f"  seen dbs:   {seen['correct']}/{seen['total']}")
+        print(f"  unseen dbs: {unseen['correct']}/{unseen['total']}")
