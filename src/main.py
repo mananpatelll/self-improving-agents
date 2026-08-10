@@ -10,11 +10,13 @@ switch which one runs.
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from langchain_core.tools import BaseTool
 
 from src.agents.worker import WorkerResult, run_worker
 from src.dataset import Example, load_examples, make_splits
+from src.logger import append_trial, log_path
 from src.sql_executor import ExecResult
 from src.verifier import Verdict, verify
 
@@ -67,11 +69,17 @@ def run_trial(
 
 def run_split(
     examples: list[Example],
+    split_name: str = "",
     lessons: list[str] | None = None,
     extra_tools: list[BaseTool] | None = None,
     route_failures_to_teacher: bool = False,
+    log_file: Path | None = None,
 ) -> list[Trial]:
-    """Run the worker over every example, verify each, and score the split."""
+    """Run the worker over every example, verify each, and score the split.
+
+    Each trial is appended to log_file as it finishes, if one is given, so
+    the log survives even if the run is interrupted partway through.
+    """
     trials: list[Trial] = []
 
     for i, example in enumerate(examples, start=1):
@@ -82,6 +90,9 @@ def run_split(
         print(f"[{i}/{len(examples)}] {status}  {example.db_id:28s} {example.question[:50]}")
         if not trial.verdict.correct:
             print(f"         reason: {trial.verdict.reason}")
+
+        if log_file is not None:
+            append_trial(log_file, split_name, trial)
 
         if route_failures_to_teacher and not trial.verdict.correct:
             send_to_teacher(trial)
@@ -101,11 +112,15 @@ if __name__ == "__main__":
     splits = make_splits(examples)
 
     questions = splits[SPLIT]
-    print(f"running '{SPLIT}' split: {len(questions)} questions\n")
+    path = log_path(SPLIT)
+    print(f"running '{SPLIT}' split: {len(questions)} questions")
+    print(f"logging to {path}\n")
 
     trials = run_split(
         questions,
+        split_name=SPLIT,
         route_failures_to_teacher=(SPLIT == "improve"),
+        log_file=path,
     )
 
     correct = sum(1 for t in trials if t.verdict.correct)
