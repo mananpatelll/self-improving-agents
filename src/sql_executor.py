@@ -15,7 +15,8 @@ from langchain_community.utilities import SQLDatabase
 from langchain_core.tools import BaseTool, tool
 from sqlalchemy import Engine, create_engine
 
-DATABASE_DIR = Path("spider_data/database")
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DATABASE_DIR = PROJECT_ROOT / "spider_data" / "database"
 
 # A query slower than this is a runaway join, not a real answer.
 DEFAULT_TIMEOUT_SECONDS = 5.0
@@ -137,9 +138,13 @@ def run_sql(
         return ExecResult(rows=tuple(tuple(row) for row in rows))
 
     except Exception as exc:
+        # SQLAlchemy wraps the sqlite3 error and appends the SQL plus a docs
+        # link. Unwrap to the original so the worker and teacher see only the
+        # part that explains the failure.
+        message = str(getattr(exc, "orig", exc))
+
         # An aborted query surfaces as an "interrupted" operational error, so
         # separate a real timeout from ordinary bad SQL.
-        message = str(exc)
         if "interrupt" in message.lower():
             return ExecResult(error=f"query timed out after {timeout_seconds}s")
         return ExecResult(error=f"sql error: {message}")
