@@ -220,3 +220,4 @@ __marimo__/
 
 # Run logs (JSONL traces from src/logger.py) -- generated, not source
 logs/
+memory.json
