@@ -1,0 +1,7 @@
+
+langgraph==1.2.10
+langchain-core==1.5.3
+langchain-anthropic==1.5.4
+
+SQLAlchemy==2.0.51
+langchain-community==0.4.2
