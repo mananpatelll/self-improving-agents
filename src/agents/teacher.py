@@ -100,7 +100,20 @@ def teach(trial: "Trial") -> str | None:
     )
 
     llm = ChatAnthropic(model=TEACHER_MODEL, max_tokens=1024)
-    draft: LessonDraft = llm.with_structured_output(LessonDraft).invoke(prompt)
+    structured_llm = llm.with_structured_output(LessonDraft)
+
+    # If structured output fails, retry once and continue 
+    draft: LessonDraft | None = None
+    for attempt in range(2):
+        try:
+            draft = structured_llm.invoke(prompt)
+            break
+        except Exception as exc:
+            print(f"  -> teacher call failed (attempt {attempt + 1}/2): {exc}")
+
+    if draft is None:
+        print("  -> giving up on this lesson, continuing")
+        return None
 
     _strip_chars = ".\"'"
     applies_when = draft.applies_when.strip().strip(_strip_chars)
