@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+# Run logs (JSONL traces from src/logger.py) -- generated, not source
+logs/
