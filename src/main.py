@@ -18,12 +18,15 @@ from src.agents.teacher import teach
 from src.agents.worker import WorkerResult, run_worker
 from src.dataset import Example, load_examples, make_splits
 from src.logger import append_trial, log_path
+from src.memory import load_lessons
 from src.sql_executor import ExecResult
 from src.verifier import Verdict, verify
 
 # Change this to switch what the script runs on: 30 fixed eval questions, or
 # the 60 the improvement loop learns from.
 SPLIT = "eval"  # "eval" | "improve"
+
+USE_MEMORY = True
 
 DEV_PATH = "spider_data/dev.json"
 
@@ -84,7 +87,9 @@ def run_split(
     trials: list[Trial] = []
 
     for i, example in enumerate(examples, start=1):
-        trial = run_trial(example, lessons, extra_tools)
+        current_lessons = load_lessons() if lessons is None else lessons
+
+        trial = run_trial(example, current_lessons, extra_tools)
         trials.append(trial)
 
         status = "PASS" if trial.verdict.correct else "FAIL"
@@ -114,12 +119,19 @@ if __name__ == "__main__":
 
     questions = splits[SPLIT]
     path = log_path(SPLIT)
+
+    # None means "read memory fresh before each question"; [] pins it empty.
+    lessons = None if USE_MEMORY else []
+    in_memory = len(load_lessons()) if USE_MEMORY else 0
+
     print(f"running '{SPLIT}' split: {len(questions)} questions")
+    print(f"memory: {'on' if USE_MEMORY else 'off'} ({in_memory} lessons at start)")
     print(f"logging to {path}\n")
 
     trials = run_split(
         questions,
         split_name=SPLIT,
+        lessons=lessons,
         route_failures_to_teacher=(SPLIT == "improve"),
         log_file=path,
     )
