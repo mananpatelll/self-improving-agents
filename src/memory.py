@@ -27,14 +27,7 @@ def clear_memory(path: Path = MEMORY_PATH) -> None:
 
 
 if __name__ == "__main__":
-    clear_memory()
-    add_lesson(
-        "when a question asks for entities including ones with zero related "
-        "rows, use LEFT JOIN, not INNER JOIN"
-    )
-    add_lesson(
-        "COUNT(*) counts NULLs, COUNT(column) does not -- match whichever "
-        "the question actually asks for"
-    )
-    print(load_lessons())
-    clear_memory()
+    lessons = load_lessons()
+    print(f"{len(lessons)} lessons in {MEMORY_PATH.name}\n")
+    for i, lesson in enumerate(lessons, start=1):
+        print(f"{i:2d}. {lesson}")
