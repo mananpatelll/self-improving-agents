@@ -1,0 +1,24 @@
+# Settings for one run. Edit this, then: python -m src.main
+#
+# The three stages of the experiment:
+#   1. baseline   -> split: eval,    use_memory: false
+#   2. improve    -> split: improve, use_memory: true
+#   3. re-score   -> split: eval,    use_memory: true
+
+# Which question set to run: "eval" (30 questions) or "improve" (60 questions).
+split: eval
+
+# Whether the worker sees the lessons the teacher has written.
+# false is the baseline, true is the improved system.
+use_memory: false
+
+# Delete memory.json before running for fresh start.
+reset_memory: false
+
+# Same seed on every run, so all stages draw the same questions.
+# Changing this invalidates comparisons against earlier runs.
+seed: 0
+
+# Only run the first N questions. null runs all of them.
+# Useful for a cheap smoke test before spending on a full run.
+limit: null

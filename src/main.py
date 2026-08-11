@@ -3,37 +3,32 @@
 One question at a time: worker writes SQL, the verifier checks it against
 gold. On failure the trial is handed to the teacher, which writes a lesson
 to memory for the worker to use on later questions.
-
-Works on any list of Example objects, so the same code scores the 30-question
-eval set or drives the 60-question improvement loop. Change SPLIT below to
-switch which one runs.
 """
 
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
 from langchain_core.tools import BaseTool
 
 from src.agents.teacher import TEACHER_MODEL, teach
 from src.agents.worker import WORKER_MODEL, WorkerResult, run_worker
 from src.dataset import Example, IMPROVE_DBS, load_examples, make_splits
 from src.logger import append_trial, log_path, write_run_summary
-from src.memory import load_lessons
+from src.memory import clear_memory, load_lessons
 from src.sql_executor import ExecResult
 from src.verifier import Verdict, verify
 
-# Change this to switch what the script runs on: 30 fixed eval questions, or
-# the 60 the improvement loop learns from.
-SPLIT = "improve"  # "eval" | "improve"
-
-USE_MEMORY = True
-
-# Passed to dataset.make_splits so every run draws the same questions --
-# needed to compare runs against each other.
-SPLIT_SEED = 0
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+CONFIG_PATH = PROJECT_ROOT / "config.yaml"
 
 DEV_PATH = "spider_data/dev.json"
+
+
+def load_config(path: Path = CONFIG_PATH) -> dict:
+    """Read run settings from config.yaml."""
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
 @dataclass
@@ -126,26 +121,38 @@ def _subscore(trials: list[Trial], in_improve_dbs: bool) -> dict:
 
 
 if __name__ == "__main__":
-    examples = load_examples(DEV_PATH)
-    splits = make_splits(examples, seed=SPLIT_SEED)
+    config = load_config()
 
-    questions = splits[SPLIT]
-    path = log_path(SPLIT)
+    split = config["split"]
+    use_memory = config["use_memory"]
+    seed = config["seed"]
+    limit = config.get("limit")
+
+    if config.get("reset_memory"):
+        clear_memory()
+        print("memory cleared")
+
+    examples = load_examples(DEV_PATH)
+    questions = make_splits(examples, seed=seed)[split]
+    if limit is not None:
+        questions = questions[:limit]
+
+    path = log_path(split)
 
     # None means "read memory fresh before each question"; [] pins it empty.
-    lessons = None if USE_MEMORY else []
-    lessons_at_start = len(load_lessons()) if USE_MEMORY else 0
+    lessons = None if use_memory else []
+    lessons_at_start = len(load_lessons()) if use_memory else 0
 
-    print(f"running '{SPLIT}' split: {len(questions)} questions")
-    print(f"memory: {'on' if USE_MEMORY else 'off'} ({lessons_at_start} lessons at start)")
+    print(f"running '{split}' split: {len(questions)} questions")
+    print(f"memory: {'on' if use_memory else 'off'} ({lessons_at_start} lessons at start)")
     print(f"logging to {path}\n")
 
     started = time.monotonic()
     trials = run_split(
         questions,
-        split_name=SPLIT,
+        split_name=split,
         lessons=lessons,
-        route_failures_to_teacher=(SPLIT == "improve"),
+        route_failures_to_teacher=(split == "improve"),
         log_file=path,
     )
     duration_seconds = round(time.monotonic() - started, 1)
@@ -156,11 +163,11 @@ if __name__ == "__main__":
 
     write_run_summary({
         "run_id": path.stem,
-        "split": SPLIT,
-        "use_memory": USE_MEMORY,
+        "split": split,
+        "use_memory": use_memory,
         "worker_model": WORKER_MODEL,
-        "teacher_model": TEACHER_MODEL if SPLIT == "improve" else None,
-        "split_seed": SPLIT_SEED,
+        "teacher_model": TEACHER_MODEL if split == "improve" else None,
+        "split_seed": seed,
         "num_questions": len(trials),
         "num_correct": correct,
         "accuracy": score(trials),
@@ -173,7 +180,7 @@ if __name__ == "__main__":
         "unseen": unseen,
     })
 
-    print(f"\n{SPLIT}: {correct}/{len(trials)} correct ({score(trials):.1%})")
+    print(f"\n{split}: {correct}/{len(trials)} correct ({score(trials):.1%})")
     if seen["total"] and unseen["total"]:
         print(f"  seen dbs:   {seen['correct']}/{seen['total']}")
         print(f"  unseen dbs: {unseen['correct']}/{unseen['total']}")
